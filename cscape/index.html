@@ -1,0 +1,772 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <title>LinuxScape: Groove Rescue</title>
+
+    <link rel="stylesheet" href="reveal.js/dist/reset.css">
+    <link rel="stylesheet" href="reveal.js/dist/reveal.css">
+    <link rel="stylesheet" href="reveal.js/dist/theme/black.css">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=Press+Start+2P&display=swap"
+          rel="stylesheet">
+
+    <link rel="stylesheet" href="story-styles/cscape-story.css">
+
+    <style>
+        body.theme-linux {
+            --page-bg: #000;
+            --font-main: "IBM Plex Mono", monospace;
+            --font-display: "Press Start 2P", "IBM Plex Mono", monospace;
+
+            --scene-bg-url: url("pics/room.png");
+            --scene-overlay: linear-gradient(rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.18));
+            --scene-scanlines: repeating-linear-gradient(
+                    to bottom,
+                    rgba(255, 255, 255, 0.025) 0px,
+                    rgba(255, 255, 255, 0.025) 1px,
+                    transparent 2px,
+                    transparent 4px
+            );
+            --scene-scanlines-opacity: 0.28;
+            --scene-vignette: radial-gradient(circle at center, transparent 45%, rgba(0, 0, 0, 0.42) 100%),
+            linear-gradient(180deg, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.34));
+
+            --speaker-x: 2.3vw;
+            --speaker-bottom: 17.5vh;
+            --speaker-width: min(28vw, 390px);
+            --speaker-bg: rgba(9, 14, 8, 0.75);
+            --speaker-border: rgba(190, 255, 155, 0.22);
+            --speaker-border-right: rgba(190, 255, 155, 0.22);
+            --speaker-radius: 0;
+            --speaker-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55),
+            0 18px 50px rgba(0, 0, 0, 0.55),
+            inset 0 0 35px rgba(0, 0, 0, 0.35);
+
+            --dialogue-left: 2vw;
+            --dialogue-right: 2vw;
+            --dialogue-bottom: 2.2vh;
+            --dialogue-min-height: 19vh;
+            --dialogue-bg: linear-gradient(180deg, rgba(6, 10, 6, 0.96), rgba(4, 7, 4, 0.94)),
+            #050805;
+            --dialogue-border: rgba(185, 255, 145, 0.32);
+            --dialogue-radius: 0;
+            --dialogue-shadow: 0 0 0 2px rgba(0, 0, 0, 0.72),
+            0 0 38px rgba(90, 255, 80, 0.10),
+            inset 0 0 30px rgba(90, 255, 80, 0.035);
+
+            --name-color: #ff9b64;
+            --text-color: #b6ff8b;
+            --objective-color: #e3ffd0;
+            --task-bg: #071207;
+            --task-border: rgba(185, 255, 145, 0.55);
+            --task-color: #e3ffd0;
+
+            --name-size: clamp(0.58rem, 0.92vw, 0.86rem);
+            --text-size: clamp(0.62rem, 1.05vw, 1.02rem);
+            --task-size: clamp(0.65rem, 1vw, 0.95rem);
+
+            --video-character-width: min(42vw, 680px);
+            --video-character-height: 90vh;
+            --video-character-bottom: 4vh;
+            --video-character-side-offset: 5vw;
+            --video-task-width: min(70vw, 900px);
+            --video-task-bottom: 4vh;
+        }
+
+        body.theme-linux .text {
+            line-height: 1.82;
+            letter-spacing: 0.035em;
+            text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.82),
+            0 0 5px rgba(182, 255, 139, 0.22),
+            0 0 16px rgba(182, 255, 139, 0.08);
+        }
+
+        body.theme-linux .name {
+            text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.85),
+            0 0 12px rgba(255, 155, 100, 0.20);
+        }
+
+        body.theme-linux .debug-label {
+            position: absolute;
+            z-index: 4;
+            top: 1.2rem;
+            left: 1.4rem;
+            color: rgba(182, 255, 139, 0.62);
+            font-family: var(--font-main);
+            font-size: clamp(0.6rem, 0.9vw, 0.9rem);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            pointer-events: none;
+        }
+
+        body.theme-linux .beat-indicator {
+            position: absolute;
+            z-index: 4;
+            top: 1.2rem;
+            right: 1.4rem;
+            color: rgba(255, 155, 100, 0.66);
+            font-family: var(--font-main);
+            font-size: clamp(0.6rem, 0.9vw, 0.9rem);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            pointer-events: none;
+        }
+
+        body.theme-linux .scene-final .dialogue {
+            border-color: rgba(255, 210, 120, 0.45);
+            box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.72),
+            0 0 50px rgba(255, 190, 90, 0.18),
+            inset 0 0 30px rgba(255, 190, 90, 0.04);
+        }
+
+        body.theme-linux .scene-final .text {
+            color: #fff1b8;
+        }
+
+        body.theme-linux .video-task {
+            box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.72),
+            0 0 38px rgba(90, 255, 80, 0.16);
+            font-weight: 700;
+        }
+        body.theme-linux .session-connect {
+            position: fixed;
+            z-index: 50;
+            top: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            display: grid;
+            grid-template-columns: minmax(12rem, 18rem) minmax(16rem, 26rem) auto;
+            gap: 0.55rem;
+            align-items: center;
+            padding: 0.65rem;
+            background: rgba(4, 8, 4, 0.92);
+            border: 1px solid rgba(185, 255, 145, 0.38);
+            box-shadow:
+                    0 0 0 2px rgba(0, 0, 0, 0.65),
+                    0 18px 50px rgba(0, 0, 0, 0.45),
+                    inset 0 0 24px rgba(90, 255, 80, 0.035);
+            font-family: var(--font-main);
+        }
+
+        body.theme-linux .session-connect input {
+            min-width: 0;
+            background: #050805;
+            color: #b7ffb7;
+            border: 1px solid rgba(185, 255, 145, 0.42);
+            padding: 0.55rem 0.65rem;
+            font: inherit;
+            font-size: clamp(0.6rem, 0.82vw, 0.85rem);
+            outline: none;
+        }
+
+        body.theme-linux .session-connect input:focus {
+            border-color: rgba(185, 255, 145, 0.82);
+            box-shadow: 0 0 18px rgba(90, 255, 80, 0.12);
+        }
+
+        body.theme-linux .session-connect input.session-code-input {
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            font-weight: 700;
+        }
+
+        body.theme-linux .session-connect button {
+            background: #163016;
+            color: #b7ffb7;
+            border: 1px solid rgba(185, 255, 145, 0.48);
+            padding: 0.55rem 0.75rem;
+            cursor: pointer;
+            font: inherit;
+            font-size: clamp(0.6rem, 0.82vw, 0.85rem);
+            white-space: nowrap;
+        }
+
+        body.theme-linux .session-connect button:hover {
+            background: #1c391c;
+            border-color: rgba(185, 255, 145, 0.72);
+        }
+
+        body.theme-linux .session-connect-status {
+            grid-column: 1 / -1;
+            color: rgba(255, 170, 140, 0.9);
+            font-size: clamp(0.55rem, 0.75vw, 0.78rem);
+            min-height: 1.2em;
+        }
+
+        body.theme-linux .session-connect-status.connected {
+            color: #7dff7d;
+        }
+
+        @media (max-width: 900px) {
+            body.theme-linux .session-connect {
+                left: 1rem;
+                right: 1rem;
+                transform: none;
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body class="theme-linux">
+
+<div class="reveal">
+    <div class="slides">
+
+        <section data-layout="dialogue"
+                 data-speaker="BYTE-BENNY"
+                 data-avatar="pics/benny.png"
+                 data-side="left"
+                 data-dialogue="Du sitzt jetzt am Terminal. Jetzt zeig mal, was du so drauf hast und reparier die Kiste. Check erst mal deinen aktuellen Benutzer."
+                 data-task="Führe im Terminal aus: whoami"
+                 data-audio-1-src="sounds/benny.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-KillianNeural">
+            <div class="scene">
+                <div class="debug-label">boot</div>
+                <div class="beat-indicator"></div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-cscape-check="check_identity_confirmed"
+                 data-after-ready-delay="1"
+                 data-speaker="CACHE-KLARA"
+                 data-avatar="pics/klara.png"
+                 data-side="right"
+                 data-dialogue="Benny nennt das Aufnahmepruefung. Eigentlich will niemand seine Tastatur anfassen."
+                 data-audio-1-src="sounds/clara.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-KatjaNeural"
+                 data-audio-2-pitch="+6Hz"
+                 data-audio-2-rate="+15%">
+            <div class="scene">
+                <div class="debug-label">crew check</div>
+                <div class="beat-indicator"></div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-speaker="RAMBO"
+                 data-avatar="pics/rambo.png"
+                 data-side="left"
+                 data-dialogue="Orientierung zuerst. Wo bist du gerade im Dateisystem?"
+                 data-task="Führe im Terminal aus: pwd"
+                 data-audio-1-src="sounds/rambo.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-ConradNeural"
+                 data-audio-2-pitch="-25Hz"
+                 data-audio-2-rate="+15%">
+            <div class="scene">
+                <div class="debug-label">step 01</div>
+                <div class="beat-indicator">tempo normal</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-cscape-check="check_pwd_used"
+                 data-after-ready-delay="1"
+                 data-speaker="BOOGIE"
+                 data-avatar="pics/boogie.png"
+                 data-side="right"
+                 data-dialogue="blorp. gloooop. blib-blib. krrrk."
+                 data-audio-1-src="sounds/boogie.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="en-US-AriaNeural"
+                 data-audio-2-rate="+65%"
+                 data-audio-2-pitch="+220Hz">
+            <div class="scene">
+                <div class="debug-label">queue noise</div>
+                <div class="beat-indicator">tempo sinkt</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-after-ready-delay="3"
+                 data-speaker="BYTE-BENNY"
+                 data-avatar="pics/benny.png"
+                 data-side="left"
+                 data-dialogue="Das ist Boogie. Der haengt meistens mit uns hier unten rum, hat immer sau gute Laune und legt auf."
+                 data-audio-1-src="sounds/benny.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-ConradNeural">
+            <div class="scene">
+                <div class="debug-label">boogie intro</div>
+                <div class="beat-indicator">tempo sinkt</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-after-ready-delay="1"
+                 data-speaker="BOOGIE"
+                 data-avatar="pics/boogie.png"
+                 data-side="right"
+                 data-dialogue="goooop!"
+                 data-audio-1-src="sounds/boogie.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="en-US-AriaNeural"
+                 data-audio-2-rate="+65%"
+                 data-audio-2-pitch="+220Hz">
+            <div class="scene">
+                <div class="debug-label">queue noise</div>
+                <div class="beat-indicator">tempo sinkt</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-speaker="BYTE-BENNY"
+                 data-avatar="pics/benny.png"
+                 data-side="left"
+                 data-dialogue="Er wollte die Warteschlange smarter machen. Seitdem wird der PC immer langsamer. Sieh nach, was hier rumliegt."
+                 data-task="Führe im Terminal aus: ls"
+                 data-audio-1-src="sounds/benny.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-KillianNeural">
+            <div class="scene">
+                <div class="debug-label">step 02</div>
+                <div class="beat-indicator">tempo sinkt</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-cscape-check="check_ls_used"
+                 data-speaker="CACHE-KLARA"
+                 data-avatar="pics/klara.png"
+                 data-side="right"
+                 data-dialogue="Da liegt eine Notiz von Benny: eine Readme-Datei! Manchmal ist zwischen seinem unangenehmen Macker-Gelaber sogar etwas Brauchbares. Lies eine Datei mit cat."
+                 data-task="Lies die Readme-Datei mit cat. Beispiel: cat [Dateiname]"
+                 data-audio-1-src="sounds/clara.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-KatjaNeural"
+                 data-audio-2-pitch="+6Hz"
+                 data-audio-2-rate="+15%">
+            <div class="scene">
+                <div class="debug-label">step 03</div>
+                <div class="beat-indicator">tempo schwerer</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-cscape-check="check_readme_read"
+                 data-speaker="RAMBO"
+                 data-avatar="pics/rambo.png"
+                 data-side="left"
+                 data-dialogue="Wenn Boogie etwas versteckt, dann meistens nicht gut. Pruefe auch versteckte Dateien."
+                 data-task="Führe im Terminal aus: ls -a"
+                 data-audio-1-src="sounds/rambo.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-ConradNeural"
+                 data-audio-2-pitch="-25Hz"
+                 data-audio-2-rate="+15%">
+            <div class="scene">
+                <div class="debug-label">step 04</div>
+                <div class="beat-indicator">tempo schwerer</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-cscape-check="check_hidden_files_found"
+                 data-speaker="CACHE-KLARA"
+                 data-avatar="pics/klara.png"
+                 data-side="right"
+                 data-dialogue="Da ist ein versteckter Warteschlangen-Hinweis. Lies ihn wie jede andere Datei."
+                 data-task="Lies die versteckte Datei mit cat. Beispiel: cat [Dateiname]"
+                 data-audio-1-src="sounds/clara.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-KatjaNeural"
+                 data-audio-2-pitch="+6Hz"
+                 data-audio-2-rate="+15%">
+            <div class="scene">
+                <div class="debug-label">step 05</div>
+                <div class="beat-indicator">tempo schwerer</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-cscape-check="check_hidden_hint_read"
+                 data-speaker="BYTE-BENNY"
+                 data-avatar="pics/benny.png"
+                 data-side="left"
+                 data-dialogue="Also ein Warteschlangen-Skript. Such im System nach dem Ding."
+                 data-task="Suche die Datei mit find. Beispiel: find [Ort] -name [Dateiname]"
+                 data-audio-1-src="sounds/benny.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-KillianNeural">
+            <div class="scene">
+                <div class="debug-label">step 06</div>
+                <div class="beat-indicator">tempo schwerer</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-cscape-check="check_queue_script_found"
+                 data-speaker="CACHE-KLARA"
+                 data-avatar="pics/klara.png"
+                 data-side="right"
+                 data-dialogue="Gefunden reicht nicht. Lies, was es macht. Fuer Dateien reicht hier cat."
+                 data-task="Lies das gefundene Skript. Beispiel: cat [Dateipfad]"
+                 data-audio-1-src="sounds/clara.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-KatjaNeural"
+                 data-audio-2-pitch="+6Hz"
+                 data-audio-2-rate="+15%">
+            <div class="scene">
+                <div class="debug-label">step 07</div>
+                <div class="beat-indicator">tempo schleppt</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-cscape-check="check_queue_script_read"
+                 data-speaker="RAMBO"
+                 data-avatar="pics/rambo.png"
+                 data-side="left"
+                 data-dialogue="Das Skript startet Worker, und jeder Worker haelt Preview-Speicher fest. Pruefe den RAM."
+                 data-task="Führe im Terminal aus: free -h"
+                 data-audio-1-src="sounds/rambo.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-ConradNeural"
+                 data-audio-2-pitch="-25Hz"
+                 data-audio-2-rate="+15%">
+            <div class="scene">
+                <div class="debug-label">step 08</div>
+                <div class="beat-indicator">tempo schleppt</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-cscape-check="check_memory_checked"
+                 data-speaker="CACHE-KLARA"
+                 data-avatar="pics/klara.png"
+                 data-side="right"
+                 data-dialogue="Der Speicher ist ungewoehnlich ausgelastet. Jetzt Logs pruefen. Logs sind auch nur Dateien."
+                 data-task="Lies die Logdatei mit cat. Beispiel: cat [Logdatei]"
+                 data-audio-1-src="sounds/clara.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-KatjaNeural"
+                 data-audio-2-pitch="+6Hz"
+                 data-audio-2-rate="+15%">
+            <div class="scene">
+                <div class="debug-label">step 09</div>
+                <div class="beat-indicator">tempo instabil</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-cscape-check="check_logs_checked"
+                 data-speaker="BOOGIE"
+                 data-after-ready-delay="2"
+                 data-avatar="pics/boogie.png"
+                 data-side="right"
+                 data-dialogue="gloob gloob. wrrrp. queue queue queue."
+                 data-audio-1-src="sounds/boogie.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="en-US-AriaNeural"
+                 data-audio-2-rate="+65%"
+                 data-audio-2-pitch="+220Hz">
+            <div class="scene">
+                <div class="debug-label">boogie panic</div>
+                <div class="beat-indicator">tempo instabil</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-speaker="BYTE-BENNY"
+                 data-avatar="pics/benny.png"
+                 data-side="left"
+                 data-dialogue="Logs sagen Queue-Worker. Jetzt schau dir die laufenden Prozesse an."
+                 data-task="Führe im Terminal aus: ps aux"
+                 data-audio-1-src="sounds/benny.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-KillianNeural">
+            <div class="scene">
+                <div class="debug-label">step 10</div>
+                <div class="beat-indicator">tempo faellt</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-cscape-check="check_ps_used"
+                 data-speaker="RAMBO"
+                 data-avatar="pics/rambo.png"
+                 data-side="right"
+                 data-dialogue="Da sind die Kindprozesse. Viele viele Kindprozesse. Wenn du viele aehnliche Prozesse stoppen willst, nutz ein Suchmuster."
+                 data-task="Stoppe die Kindprozesse. Beispiel: pkill -f [Suchmuster]"
+                 data-audio-1-src="sounds/rambo.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-ConradNeural"
+                 data-audio-2-pitch="-25Hz"
+                 data-audio-2-rate="+15%">
+            <div class="scene">
+                <div class="debug-label">step 11</div>
+                <div class="beat-indicator">tempo zaeh</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-cscape-check="check_children_stopped"
+                 data-speaker="BYTE-BENNY"
+                 data-avatar="pics/benny.png"
+                 data-side="left"
+                 data-dialogue="Gut. Die Kind-Prozesse sind weg. Aber wenn der Erzeuger noch laeuft, baut er sie wieder nach. Schau nochmal in die Prozesse."
+                 data-task="Prüfe erneut die Prozesse mit: ps aux"
+                 data-audio-1-src="sounds/benny.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-KillianNeural">
+            <div class="scene">
+                <div class="debug-label">step 12</div>
+                <div class="beat-indicator">tempo haelt kurz</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-cscape-check="check_parent_found"
+                 data-speaker="RAMBO"
+                 data-avatar="pics/rambo.png"
+                 data-side="right"
+                 data-dialogue="Da ist das Parent-Skript. Stoppe das eigentliche Problem, nicht nur seine Kinder."
+                 data-task="Stoppe das Parent-Skript. Beispiel: pkill -f [Suchmuster] oder kill [PID]"
+                 data-audio-1-src="sounds/rambo.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-ConradNeural"
+                 data-audio-2-pitch="-25Hz"
+                 data-audio-2-rate="+15%">
+            <div class="scene">
+                <div class="debug-label">step 13</div>
+                <div class="beat-indicator">tempo kommt zurueck</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-after-ready-delay="1"
+                 data-speaker="BOOGIE"
+                 data-avatar="pics/boogie.png"
+                 data-side="left"
+                 data-cscape-check="check_parent_stopped"
+                 data-dialogue="blip... glorp? ..."
+                 data-audio-1-src="sounds/boogie.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="en-US-AriaNeural"
+                 data-audio-2-rate="+65%"
+                 data-audio-2-pitch="+220Hz">
+            <div class="scene">
+                <div class="debug-label">boogie confused</div>
+                <div class="beat-indicator">tempo kommt zurueck</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-after-ready-delay="1"
+                 data-speaker="CACHE-KLARA"
+                 data-avatar="pics/klara.png"
+                 data-side="right"
+                 data-dialogue="Die Queue waechst nicht mehr nach. Genau das war der Punkt. Kind-Prozesse stoppen senkt den Druck, Parent stoppen loest das Problem."
+                 data-audio-1-src="sounds/clara.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-KatjaNeural"
+                 data-audio-2-pitch="+6Hz"
+                 data-audio-2-rate="+15%">
+            <div class="scene scene-final">
+                <div class="debug-label">root cause fixed</div>
+                <div class="beat-indicator">tempo restored</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-after-ready-delay="1"
+                 data-speaker="BOOGIE"
+                 data-avatar="pics/boogie.png"
+                 data-side="left"
+                 data-dialogue="bloop."
+                 data-audio-1-src="sounds/boogie.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="en-US-AriaNeural"
+                 data-audio-2-rate="+65%"
+                 data-audio-2-pitch="+220Hz">
+            <div class="scene scene-final">
+                <div class="debug-label">boogie final</div>
+                <div class="beat-indicator">tempo restored</div>
+            </div>
+        </section>
+
+        <section data-layout="dialogue"
+                 data-after-ready-delay="1"
+                 data-speaker="BYTE-BENNY"
+                 data-avatar="pics/benny.png"
+                 data-side="left"
+                 data-dialogue="Nicht komplett schlecht. Respekt Neuer, du hast es geschafft!"
+                 data-audio-1-src="sounds/benny.mp3"
+                 data-audio-1-phase="before-text"
+                 data-audio-1-volume="0.85"
+                 data-audio-2-type="tts"
+                 data-audio-2-phase="start"
+                 data-audio-2-text-from="dialogue"
+                 data-audio-2-voice="de-DE-KillianNeural">
+            <div class="scene scene-final">
+                <div class="debug-label">cavebox stable</div>
+                <div class="beat-indicator">tempo restored</div>
+            </div>
+        </section>
+
+    </div>
+</div>
+<script src="reveal.js/dist/reveal.js"></script>
+<script src="revealjs-cscape.js"></script>
+
+<script>
+    window.CSCAPE_STORY = {
+        blockNavigationUntilReady: true,
+
+        ttsUrl: `${
+            window.location.protocol === "file:" ? "http:" : window.location.protocol
+        }//${
+            window.location.hostname || "localhost"
+        }:8765/tts`,
+        defaultVoice: "de-DE-KatjaNeural",
+        defaultTtsRate: "+0%",
+        defaultTtsPitch: "+0Hz",
+
+        defaultBackground: "pics/room.png",
+        defaultMusic: "sounds/alien gloop.mp3",
+        musicVolume: 0.42,
+        soundVolume: 0.85,
+
+        typeSpeed: 35,
+        defaultLayout: "dialogue",
+        defaultTextMode: "type",
+
+        audioHintText: "CLICK / KEY FOR AUDIO",
+
+        formatText(text) {
+            return String(text || "");
+        }
+    };
+</script>
+
+<script src="story-styles/cscape-story.js"></script>
+
+
+<script>
+    function initRevealStory() {
+        window.CSCAPE_STORY_API.init();
+
+        Reveal.initialize({
+            hash: false,
+            controls: false,
+            progress: false,
+            transition: "none",
+            center: false,
+            keyboard: {
+                27: function () {
+                    alert("Close with Ctrl+W");
+                },
+                83: null
+            },
+            plugins: [
+                RevealCscape
+            ]
+        });
+    }
+
+    document.addEventListener(
+        "DOMContentLoaded",
+        initRevealStory
+    );
+</script>
+
+</body>
+
+</html>

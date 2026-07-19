@@ -1,0 +1,62 @@
+# Exklusive interaktive Bash-Konfiguration für LinuxScape.
+set +o history
+
+export PATH="/usr/local/bin:/usr/games:/usr/bin:/bin"
+export LANG="${LANG:-C.UTF-8}"
+
+umask 0022
+
+HISTFILE=/dev/null
+HISTSIZE=2000
+HISTFILESIZE=2000
+HISTCONTROL=""
+HISTIGNORE=""
+
+shopt -s cmdhist checkwinsize
+
+PS1='\[\e[1;32m\]newbie@linuxscape\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]$ '
+
+__LINUXSCAPE_LAST_HISTORY_NUMBER=""
+
+__linuxscape_record_last_command() {
+    local exit_code="$?"
+    local history_line=""
+    local history_number=""
+    local command_text=""
+
+    history_line="$(
+        HISTTIMEFORMAT= builtin history 1 2>/dev/null
+    )" || return 0
+
+    if [[ ! "${history_line}" =~ ^[[:space:]]*([0-9]+)\*?[[:space:]]+(.*)$ ]]; then
+        return 0
+    fi
+
+    history_number="${BASH_REMATCH[1]}"
+    command_text="${BASH_REMATCH[2]}"
+
+    if [[ "${history_number}" == "${__LINUXSCAPE_LAST_HISTORY_NUMBER}" ]]; then
+        return 0
+    fi
+
+    if [[ -n "${command_text}" ]]; then
+        /usr/local/bin/linuxscape-record-command \
+            "${exit_code}" \
+            "${PWD}" \
+            "${command_text}" \
+            >/dev/null 2>&1 \
+            || true
+    fi
+
+    __LINUXSCAPE_LAST_HISTORY_NUMBER="${history_number}"
+}
+
+PROMPT_COMMAND=__linuxscape_record_last_command
+
+readonly PROMPT_COMMAND
+readonly -f __linuxscape_record_last_command
+
+printf '\nLinuxScape-Terminal verbunden. Viel Erfolg!\n\n'
+
+builtin history -c
+set -o history

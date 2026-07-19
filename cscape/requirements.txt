@@ -1,0 +1,6 @@
+flask
+flask-cors
+requests
+edge-tts
+fastapi
+uvicorn

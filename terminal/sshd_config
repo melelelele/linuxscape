@@ -1,0 +1,29 @@
+Port 22
+ListenAddress 0.0.0.0
+Protocol 2
+
+PermitRootLogin no
+PasswordAuthentication yes
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+UsePAM no
+PermitEmptyPasswords no
+PrintMotd no
+
+X11Forwarding no
+AllowAgentForwarding no
+AllowTcpForwarding no
+PermitTunnel no
+GatewayPorts no
+
+ClientAliveInterval 60
+ClientAliveCountMax 3
+
+AllowUsers linuxscape
+
+Subsystem sftp internal-sftp
+
+Match User linuxscape
+    ForceCommand /usr/local/bin/linuxscape-shell
+    PermitTTY yes
+    DisableForwarding yes

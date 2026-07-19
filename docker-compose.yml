@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+  terminal:
+    container_name: linuxscape-terminal
+    build:
+      context: ./terminal
+    environment:
+      LINUXSCAPE_PASSWORD: linuxscape
+      QUEUE_CHILD_COUNT: "45"
+      QUEUE_PREVIEW_KB_PER_CHILD: "2048"
+      QUEUE_SPAWN_INTERVAL_SECONDS: "0.5"
+      QUEUE_LOG_INTERVAL_SECONDS: "4.0"
+    ports:
+      - "2222:22"
+    volumes:
+      - ./runtime:/run/linuxscape
+    init: true
+    restart: unless-stopped

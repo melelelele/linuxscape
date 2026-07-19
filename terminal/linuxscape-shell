@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly START_DIRECTORY="/escape/home/newbie"
+
+if [[ ! -d "${START_DIRECTORY}" ]]; then
+    echo "Das Lab wurde noch nicht initialisiert." >&2
+    exit 1
+fi
+
+cd "${START_DIRECTORY}"
+
+exec /bin/bash \
+    --noprofile \
+    --rcfile /etc/linuxscape/bashrc \
+    -i
