@@ -723,6 +723,12 @@ localhost:5000
 
 gestartet.
 
+
+Falls zusätzlich dynamische Sprachausgabe genutzt wird:
+
+```bash
+python3 tts_server.py
+```
 ---
 
 ## Spieler-PC einrichten
