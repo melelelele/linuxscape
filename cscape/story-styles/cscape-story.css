@@ -346,6 +346,10 @@ body {
 }
 
 /* Layout: hybrid */
+.reveal section[data-layout="hybrid"] {
+    --hybrid-dialogue-gap: 2vw;
+}
+
 .reveal section[data-layout="hybrid"] .speaker {
     bottom: var(--video-character-bottom);
     width: var(--hybrid-character-width);
@@ -363,8 +367,42 @@ body {
     object-position: bottom center;
 }
 
-.reveal section[data-layout="hybrid"] .dialogue {
+/*
+ * Figur links:
+ * Links wird Platz für die Figur freigehalten.
+ */
+.reveal section[data-layout="hybrid"][data-side="left"] .dialogue {
+    left: calc(
+        var(--speaker-x)
+        + var(--hybrid-character-width)
+        + var(--hybrid-dialogue-gap)
+    );
+    right: var(--dialogue-right);
+}
+
+/*
+ * Figur rechts:
+ * Rechts wird Platz für die Figur freigehalten.
+ */
+.reveal section[data-layout="hybrid"][data-side="right"] .dialogue {
     left: var(--dialogue-left);
+    right: calc(
+        var(--speaker-x)
+        + var(--hybrid-character-width)
+        + var(--hybrid-dialogue-gap)
+    );
+}
+
+/*
+ * Fallback, falls data-side fehlt:
+ * Standardmäßig wird von einer linken Figur ausgegangen.
+ */
+.reveal section[data-layout="hybrid"]:not([data-side]) .dialogue {
+    left: calc(
+        var(--speaker-x)
+        + var(--hybrid-character-width)
+        + var(--hybrid-dialogue-gap)
+    );
     right: var(--dialogue-right);
 }
 
@@ -393,5 +431,19 @@ body {
 
     .dialogue {
         padding: 0.8rem 0.95rem;
+    }
+}
+@media (max-width: 900px) {
+    .reveal section[data-layout="hybrid"] .speaker {
+        bottom: 24vh;
+        width: min(48vw, 340px);
+        height: 68vh;
+    }
+
+    .reveal section[data-layout="hybrid"][data-side="left"] .dialogue,
+    .reveal section[data-layout="hybrid"][data-side="right"] .dialogue,
+    .reveal section[data-layout="hybrid"]:not([data-side]) .dialogue {
+        left: var(--dialogue-left);
+        right: var(--dialogue-right);
     }
 }
