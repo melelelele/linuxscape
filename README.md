@@ -845,3 +845,190 @@ sudo ./remove-linuxscape-setup.sh
 Um eigene Aufgaben zu erstellen müssen wie gewohnt `game.py` und `index.html` bearbeitet werden. Dort müssen nach dem Muster der dort bereits bestehenden Aufgaben neue checks und neue Aufgaben erstellt werden. 
 ## Hinweis
 dieses Projekt verwendet die Story-Styles-Erweiterung für cscape. Details zur Funktion und Verwendung siehe [dieses Repository](https://github.com/melelelele/story-styles).
+
+
+#Anhang: Setup in öffentlichem Netz
+## Direkte LAN-Verbindung ohne Router
+
+Falls am Veranstaltungsort keine SSH-Verbindungen über das vorhandene WLAN oder Netzwerk möglich sind, können Spieler-PC und Raspberry Pi direkt mit einem LAN-Kabel verbunden werden.
+
+Ein Router und eine Internetverbindung werden dafür nicht benötigt.
+
+Auf beiden Geräten wird jeweils eine feste IPv4-Adresse im gleichen Netzwerk eingerichtet:
+
+```text
+Raspberry Pi:  192.168.50.1/24
+Spieler-PC:    192.168.50.2/24
+```
+
+Ein Crossover-Kabel ist dafür normalerweise nicht nötig.
+### Raspberry Pi konfigurieren
+
+Zuerst den Namen der Ethernet-Verbindung prüfen:
+
+```bash
+nmcli connection show
+```
+
+Auf Raspberry Pi OS heißt die Verbindung häufig:
+
+```text
+Wired connection 1
+```
+
+Die statische IP-Adresse konfigurieren:
+
+```bash
+sudo nmcli connection modify "Wired connection 1" \
+  ipv4.method manual \
+  ipv4.addresses 192.168.50.1/24 \
+  ipv4.gateway "" \
+  ipv4.dns ""
+```
+
+Anschließend die Verbindung aktivieren:
+
+```bash
+sudo nmcli connection up "Wired connection 1"
+```
+
+Die Adresse prüfen:
+
+```bash
+ip -4 address
+```
+
+Auf der Ethernet-Schnittstelle sollte folgende Adresse angezeigt werden:
+
+```text
+192.168.50.1/24
+```
+
+SSH muss auf dem Raspberry Pi aktiviert sein:
+
+```bash
+sudo systemctl enable --now ssh
+```
+
+Status prüfen:
+
+```bash
+systemctl status ssh
+```
+
+### Spieler-PC konfigurieren
+
+Zuerst den Namen der Ethernet-Verbindung prüfen:
+
+```bash
+nmcli connection show
+```
+
+Der Name kann beispielsweise lauten:
+
+```text
+Kabelgebundene Verbindung 1
+```
+
+Die statische IP-Adresse konfigurieren:
+
+```bash
+sudo nmcli connection modify "Kabelgebundene Verbindung 1" \
+  ipv4.method manual \
+  ipv4.addresses 192.168.50.2/24 \
+  ipv4.gateway "" \
+  ipv4.dns ""
+```
+
+Anschließend die Verbindung neu aktivieren:
+
+```bash
+sudo nmcli connection down "Kabelgebundene Verbindung 1"
+sudo nmcli connection up "Kabelgebundene Verbindung 1"
+```
+
+Die konfigurierte Adresse prüfen:
+
+```bash
+ip -4 address
+```
+
+Auf der Ethernet-Schnittstelle sollte folgende Adresse angezeigt werden:
+
+```text
+192.168.50.2/24
+```
+
+### Netzwerkverbindung testen
+
+Vom Spieler-PC aus den Raspberry Pi anpingen:
+
+```bash
+ping -c 3 192.168.50.1
+```
+
+Bei erfolgreicher Verbindung sollten Antworten vom Raspberry Pi erscheinen.
+
+Falls keine Verbindung zustande kommt, kann geprüft werden, ob das LAN-Kabel erkannt wurde.
+
+Auf dem Spieler-PC, falls die Ethernet-Schnittstelle `eno1` heißt:
+
+```bash
+cat /sys/class/net/eno1/carrier
+```
+
+Die Ausgabe bedeutet:
+
+```text
+1 = LAN-Verbindung erkannt
+0 = keine physische Verbindung
+```
+
+Den Namen der Ethernet-Schnittstelle kann man mit folgendem Befehl ermitteln:
+
+```bash
+ip link
+```
+
+### SSH-Verbindung starten
+
+Vom Spieler-PC:
+
+```bash
+ssh linuxscape@192.168.50.1
+```
+
+Nach Eingabe des für den Benutzer `linuxscape` vergebenen Passworts sollte der Spieler direkt in der LinuxScape-Spielumgebung landen:
+
+```text
+/escape/home/newbie
+```
+
+
+### Verbindung nach der Veranstaltung zurücksetzen
+
+Soll die Ethernet-Verbindung später wieder automatisch per DHCP konfiguriert werden, kann die manuelle Adresse zurückgesetzt werden.
+
+Auf dem Raspberry Pi:
+
+```bash
+sudo nmcli connection modify "Wired connection 1" \
+  ipv4.method auto \
+  ipv4.addresses "" \
+  ipv4.gateway "" \
+  ipv4.dns ""
+
+sudo nmcli connection up "Wired connection 1"
+```
+
+Auf dem Spieler-PC:
+
+```bash
+sudo nmcli connection modify "Kabelgebundene Verbindung 1" \
+  ipv4.method auto \
+  ipv4.addresses "" \
+  ipv4.gateway "" \
+  ipv4.dns ""
+
+sudo nmcli connection up "Kabelgebundene Verbindung 1"
+```
