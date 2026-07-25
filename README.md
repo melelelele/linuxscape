@@ -35,7 +35,7 @@ Das Linux-Lab schreibt lokale JSON-Dateien.
 # Projektstruktur
 
 ```text
-linuxscape-live/
+linuxscape/
 │
 ├── cscape/
 │   ├── game.py
@@ -147,7 +147,7 @@ sudo apt install -y \
 Projektordner:
 
 ```bash
-cd linuxscape-live
+cd linuxscape
 ```
 
 Container bauen:
@@ -225,7 +225,7 @@ python tts_server.py
 ```
 und in einem separaten Fenster:
 ```bash
-cd ~/Dokumente/GitHub/cscaperooms/linuxscape-live/cscape
+cd /path/to/linuxscape/cscape
 
 source .venv/bin/activate
 
@@ -250,15 +250,12 @@ gestartet.
 
 CSCape funktioniert wie ein normales CSCape-Projekt.
 
-`index.html` wird lokal im Browser geöffnet.
-
-Die Präsentation kommuniziert automatisch mit:
+Die Präsentation ist wie gewohnt erreichbar unter:
 
 ```text
 http://localhost:5000
 ```
 
-über das CSCape-Plugin.
 
 ---
 
@@ -461,8 +458,8 @@ sudo mkdir -p /opt/linuxscape
 sudo rm -rf /opt/linuxscape/cscape
 sudo rm -rf /opt/linuxscape/terminal
 
-sudo cp -a /pfad/zum/linuxscape-live/cscape /opt/linuxscape/cscape
-sudo cp -a /pfad/zum/linuxscape-live/terminal /opt/linuxscape/terminal
+sudo cp -a /pfad/zum/linuxscape/cscape /opt/linuxscape/cscape
+sudo cp -a /pfad/zum/linuxscape/terminal /opt/linuxscape/terminal
 
 sudo mkdir -p /run/linuxscape
 sudo chmod 0777 /run/linuxscape
@@ -687,15 +684,15 @@ journalctl -u linuxscape-cscape.service -f
 In das CSCape-Verzeichnis des Projekts wechseln:
 
 ```bash
-cd /pfad/zum/linuxscape-live/cscape
+cd /pfad/zum/linuxscape/cscape
 ```
 
-Starten:
+wie gewohnt CSCape starten:
 
 ```bash
 ./run.sh
 ```
-und in einem separaten Fenster:
+und (falls dynamische Sprachausgabe verwendet wird) in einem separaten Fenster:
 ```bash
 python tts_server.py
 ```
@@ -724,11 +721,6 @@ localhost:5000
 gestartet.
 
 
-Falls zusätzlich dynamische Sprachausgabe genutzt wird:
-
-```bash
-python3 tts_server.py
-```
 ---
 
 ## Spieler-PC einrichten
@@ -782,7 +774,7 @@ sudo systemctl restart linuxscape-cscape.service
 
 Dann:
 
-1. Regie-Präsentation öffnen
+1. Präsentation in einem Browser auf Port 5000 auf Pi öffnen
 2. Spieler per SSH verbinden
 3. Spiel starten
 
@@ -833,7 +825,7 @@ Das Skript entfernt die LinuxScape-Spielumgebung, Services, kopierten Dateien un
 
 Auf dem Pi in den Projektordner wechseln:
 ```bash
-cd /pfad/zum/Projektordner/linuxscape-live
+cd /pfad/zum/Projektordner/linuxscape
 ```
 
 
@@ -848,3 +840,8 @@ Ausführen:
 ```bash
 sudo ./remove-linuxscape-setup.sh
 ```
+
+## Eigene Aufgaben erstellen
+Um eigene Aufgaben zu erstellen müssen wie gewohnt `game.py` und `index.html` bearbeitet werden. Dort müssen nach dem Muster der dort bereits bestehenden Aufgaben neue checks und neue Aufgaben erstellt werden. 
+## Hinweis
+dieses Projekt verwendet die Story-Styles-Erweiterung für cscape. Details zur Funktion und Verwendung siehe [dieses Repository](https://github.com/melelelele/story-styles).
