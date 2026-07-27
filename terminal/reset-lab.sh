@@ -4,11 +4,15 @@ set -Eeuo pipefail
 readonly PLAYER_USER="linuxscape"
 readonly PLAYER_GROUP="linuxscape"
 readonly STATE_DIR="/run/linuxscape"
+readonly RUN_ID_PATH="${STATE_DIR}/run_id"
 
 if [[ "${EUID}" -ne 0 ]]; then
     echo "reset-lab muss als root laufen." >&2
     exit 1
 fi
+
+mkdir -p "${STATE_DIR}"
+chmod 0777 "${STATE_DIR}"
 
 # Offene SSH-Shell und Prozesse der vorherigen Runde beenden.
 pkill -KILL \
@@ -16,76 +20,46 @@ pkill -KILL \
     2>/dev/null \
     || true
 
-# Alte root-Prozesse aus vorherigen Runden beseitigen.
-pkill -f \
+# Alte Prozesse aus vorherigen Runden beseitigen.
+for process_pattern in \
     "/escape/opt/boogies_setlist_script.py" \
-    2>/dev/null \
-    || true
-
-pkill -f \
     "queue_worker" \
-    2>/dev/null \
-    || true
-
-pkill -f \
+    "queue-worker-mem" \
     "queue-monitor" \
-    2>/dev/null \
-    || true
-
-pkill -f \
     "light-sync" \
-    2>/dev/null \
-    || true
-
-pkill -f \
     "snackd" \
-    2>/dev/null \
-    || true
-
-pkill -f \
-    "poster-watch" \
-    2>/dev/null \
-    || true
+    "poster-watch"
+do
+    pkill -f \
+        "${process_pattern}" \
+        2>/dev/null \
+        || true
+done
 
 rm -f \
     "${STATE_DIR}/state.json" \
     "${STATE_DIR}/events.jsonl" \
     "${STATE_DIR}/state.lock"
 
-# Dein bisheriges Lab unverändert erzeugen.
+# Das bestehende Ursprungsskript erzeugt die Lab-Dateien.
 bash /opt/linuxscape/reset-lab.original.sh
 
 # Das Ursprungsskript startet seine Prozesse als root.
 # Diese Instanzen werden beendet und danach als Spieler neu gestartet.
-pkill -f \
+for process_pattern in \
     "/escape/opt/boogies_setlist_script.py" \
-    2>/dev/null \
-    || true
-
-pkill -f \
     "queue_worker" \
-    2>/dev/null \
-    || true
-
-pkill -f \
+    "queue-worker-mem" \
     "queue-monitor" \
-    2>/dev/null \
-    || true
-
-pkill -f \
     "light-sync" \
-    2>/dev/null \
-    || true
-
-pkill -f \
     "snackd" \
-    2>/dev/null \
-    || true
-
-pkill -f \
-    "poster-watch" \
-    2>/dev/null \
-    || true
+    "poster-watch"
+do
+    pkill -f \
+        "${process_pattern}" \
+        2>/dev/null \
+        || true
+done
 
 sleep 0.3
 
@@ -148,5 +122,13 @@ done
 
 sleep 1
 
+# Die neue Runden-ID wird erst veröffentlicht, wenn das Lab vollständig steht.
+# game.py erkennt den Wechsel auch ohne Neustart des CSCape-Dienstes.
+temporary_run_id="$(mktemp "${STATE_DIR}/.run-id.XXXXXX")"
+cat /proc/sys/kernel/random/uuid > "${temporary_run_id}"
+chmod 0644 "${temporary_run_id}"
+mv -f "${temporary_run_id}" "${RUN_ID_PATH}"
+
 echo "LinuxScape-Lab wurde neu erzeugt."
+echo "Runden-ID: $(cat "${RUN_ID_PATH}")"
 echo "Parent-PID: $(cat /escape/run/boogies_setlist_script.pid)"
