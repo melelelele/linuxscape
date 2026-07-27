@@ -4,28 +4,26 @@ import fnmatch
 import json
 import os
 import posixpath
-import pwd
 import re
 import shlex
 from pathlib import Path
 from typing import Any
 
 
-STATE_DIR = Path(os.environ.get("LINUXSCAPE_STATE_DIR", "/run/linuxscape"))
+STATE_DIR = Path(
+    os.environ.get(
+        "LINUXSCAPE_STATE_DIR",
+        "/run/linuxscape",
+    )
+)
+
 STATE_PATH = STATE_DIR / "state.json"
 EVENTS_PATH = STATE_DIR / "events.jsonl"
-RUN_ID_PATH = STATE_DIR / "run_id"
 
 README_PATH = "/escape/home/newbie/README.txt"
 HIDDEN_HINT_PATH = "/escape/home/newbie/.queue_hint"
 PARENT_SCRIPT_PATH = "/escape/opt/boogies_setlist_script.py"
 SYSTEM_LOG_PATH = "/escape/home/newbie/logs/system.log"
-RECORDER_PATH = "/usr/local/bin/linuxscape-record-command"
-
-try:
-    PLAYER_UID = pwd.getpwnam("linuxscape").pw_uid
-except KeyError:
-    PLAYER_UID = -1
 
 READ_COMMANDS = {
     "cat",
@@ -72,56 +70,135 @@ ORDER = [
     "parent_stopped",
 ]
 
-STEP = {name: index + 1 for index, name in enumerate(ORDER)}
+STEP = {
+    name: index + 1
+    for index, name in enumerate(ORDER)
+}
 
 
 class Game:
     title = "LinuxScape: Groove Rescue"
 
     def __init__(self) -> None:
-        self._run_id = ""
-        self._reset_progress()
-        self._sync_run()
-
-    def _reset_progress(self) -> None:
         self.progress_step = 0
         self._last_sequence = 0
+        self._run_id: str | None = None
 
-        self._last_worker_observation: set[int] = set()
-        self._last_parent_observation: set[int] = set()
+        self._known_worker_pids: set[int] = set()
+        self._known_parent_pids: set[int] = set()
 
-        self._pending_worker_pids: set[int] | None = None
-        self._pending_parent_pids: set[int] | None = None
+        self._current_worker_pids: set[int] = set()
+        self._current_parent_pids: set[int] = set()
 
-    def _read_run_id(self) -> str:
+
+        self._worker_snapshot_pids: set[int] = set()
+        self._worker_snapshot_parent_pids: set[int] = set()
+        self._worker_kill_attempted = False
+
+
+        self._parent_snapshot_pids: set[int] = set()
+        self._parent_kill_attempted = False
+
+        self._refresh()
+
+    def _reset_round_state(
+        self,
+        run_id: str | None = None,
+    ) -> None:
+        self.progress_step = 0
+        self._last_sequence = 0
+        self._run_id = run_id
+
+        self._known_worker_pids.clear()
+        self._known_parent_pids.clear()
+
+        self._current_worker_pids.clear()
+        self._current_parent_pids.clear()
+
+        self._worker_snapshot_pids.clear()
+        self._worker_snapshot_parent_pids.clear()
+        self._worker_kill_attempted = False
+
+        self._parent_snapshot_pids.clear()
+        self._parent_kill_attempted = False
+
+        print(
+            "LinuxScape: neue Spielrunde erkannt",
+            flush=True,
+        )
+
+    def _read_latest_state(
+        self,
+    ) -> dict[str, Any] | None:
         try:
-            run_id = RUN_ID_PATH.read_text(encoding="utf-8").strip()
-        except OSError:
-            return "legacy"
+            state = json.loads(
+                STATE_PATH.read_text(
+                    encoding="utf-8",
+                )
+            )
+        except (
+            OSError,
+            json.JSONDecodeError,
+        ):
+            return None
 
-        return run_id or "legacy"
+        if not isinstance(state, dict):
+            return None
 
-    def _sync_run(self) -> None:
-        run_id = self._read_run_id()
+        return state
 
-        if run_id == self._run_id:
+    def _detect_round_reset(self) -> None:
+        state = self._read_latest_state()
+
+        if state is None:
             return
 
-        previous_run_id = self._run_id
-        self._run_id = run_id
-        self._reset_progress()
+        sequence = state.get("sequence")
+        run_id = state.get("run_id")
 
-        if previous_run_id:
-            print(
-                f"LinuxScape: neue Runde erkannt: {run_id}",
-                flush=True,
+        normalized_run_id = (
+            run_id
+            if isinstance(run_id, str) and run_id
+            else None
+        )
+
+        if (
+            self._run_id is None
+            and normalized_run_id is not None
+        ):
+            self._run_id = normalized_run_id
+
+        elif (
+            normalized_run_id is not None
+            and self._run_id is not None
+            and normalized_run_id != self._run_id
+        ):
+            self._reset_round_state(
+                normalized_run_id,
+            )
+            return
+
+
+        if (
+            isinstance(sequence, int)
+            and sequence >= 0
+            and sequence < self._last_sequence
+        ):
+            self._reset_round_state(
+                normalized_run_id,
             )
 
-    def _load_events_after(self, sequence: int) -> list[dict[str, Any]]:
+    def _load_events_after(
+        self,
+        sequence: int,
+    ) -> list[dict[str, Any]]:
         events: list[dict[str, Any]] = []
 
         try:
-            with EVENTS_PATH.open("r", encoding="utf-8") as events_file:
+            with EVENTS_PATH.open(
+                "r",
+                encoding="utf-8",
+            ) as events_file:
                 for line in events_file:
                     try:
                         event = json.loads(line)
@@ -131,79 +208,120 @@ class Game:
                     if not isinstance(event, dict):
                         continue
 
-                    event_sequence = event.get("sequence")
-                    event_run_id = event.get("run_id", "legacy")
+                    event_sequence = event.get(
+                        "sequence",
+                    )
 
                     if (
                         isinstance(event_sequence, int)
                         and event_sequence > sequence
-                        and event_run_id == self._run_id
                     ):
                         events.append(event)
-        except OSError:
-            return self._load_latest_state_after(sequence)
 
-        events.sort(key=lambda event: event["sequence"])
+        except OSError:
+            return self._load_latest_state_after(
+                sequence,
+            )
+
+        events.sort(
+            key=lambda event: event["sequence"],
+        )
+
         return events
 
-    def _load_latest_state_after(self, sequence: int) -> list[dict[str, Any]]:
-        try:
-            state = json.loads(STATE_PATH.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return []
+    def _load_latest_state_after(
+        self,
+        sequence: int,
+    ) -> list[dict[str, Any]]:
+        state = self._read_latest_state()
 
-        if not isinstance(state, dict):
+        if state is None:
             return []
 
         state_sequence = state.get("sequence")
-        state_run_id = state.get("run_id", "legacy")
 
         if (
             isinstance(state_sequence, int)
             and state_sequence > sequence
-            and state_run_id == self._run_id
         ):
             return [state]
 
         return []
 
-    def _refresh(self, target_step: str) -> None:
-        self._sync_run()
-        target_number = STEP[target_step]
+    def _refresh(self) -> None:
+        self._detect_round_reset()
 
-        self._evaluate_pending()
+        events = self._load_events_after(
+            self._last_sequence,
+        )
 
-        while self.progress_step < target_number:
-            events = self._load_events_after(self._last_sequence)
+        for event in events:
+            sequence = event.get("sequence")
 
-            if not events:
-                break
+            if not isinstance(sequence, int):
+                continue
 
-            for event in events:
-                if self.progress_step >= target_number:
-                    break
+            event_run_id = event.get("run_id")
 
-                sequence = event.get("sequence")
+            if (
+                isinstance(event_run_id, str)
+                and event_run_id
+            ):
+                if self._run_id is None:
+                    self._run_id = event_run_id
 
-                if not isinstance(sequence, int):
-                    continue
+                elif event_run_id != self._run_id:
+                    self._reset_round_state(
+                        event_run_id,
+                    )
 
-                self._last_sequence = sequence
-                self._consume_event(event)
-                self._evaluate_pending()
+            self._last_sequence = max(
+                self._last_sequence,
+                sequence,
+            )
 
-        self._evaluate_pending()
+            self._remember_processes(event)
+            self._consume_event(event)
 
-    def _consume_event(self, event: dict[str, Any]) -> None:
-        if self.progress_step >= len(ORDER):
-            return
+    def _remember_processes(
+        self,
+        event: dict[str, Any],
+    ) -> None:
+        worker_pids = set(
+            self._integer_list(
+                event.get("worker_pids"),
+            )
+        )
 
-        expected = ORDER[self.progress_step]
+        parent_pids = set(
+            self._integer_list(
+                event.get("parent_pids"),
+            )
+        )
+
+        self._current_worker_pids = worker_pids
+        self._current_parent_pids = parent_pids
+
+        self._known_worker_pids.update(
+            worker_pids,
+        )
+
+        self._known_parent_pids.update(
+            parent_pids,
+        )
+
+    def _consume_event(
+        self,
+        event: dict[str, Any],
+    ) -> None:
         command = event.get("last_command")
         cwd = event.get("cwd")
         exit_code = event.get("last_exit_code")
 
-        if not isinstance(command, str) or not command.strip():
+        if (
+            not isinstance(command, str)
+            or not command.strip()
+        ):
             return
 
         if not isinstance(cwd, str) or not cwd:
@@ -211,277 +329,424 @@ class Game:
 
         words = self._split_command(command)
         program = self._program(words)
-        success = exit_code == 0
 
-        event_workers = self._integer_set(event.get("worker_pids"))
-        event_parents = self._integer_set(event.get("parent_pids"))
 
-        if expected == "used_whoami" and success and program == "whoami":
-            self._complete(expected)
+        self._try_complete_worker_stop()
+        self._try_complete_parent_stop()
+
+        if exit_code != 0:
             return
 
-        if expected == "used_pwd" and success and program == "pwd":
-            self._complete(expected)
-            return
+        while self.progress_step < len(ORDER):
+            expected = ORDER[
+                self.progress_step
+            ]
 
-        if expected == "used_ls" and success and program == "ls":
-            self._complete(expected)
-            return
+            completed = False
 
-        if (
-            expected == "read_readme"
-            and success
-            and program in READ_COMMANDS
-            and self._targets_exact_path(words, cwd, README_PATH)
-        ):
-            self._complete(expected)
-            return
+            if expected == "used_whoami":
+                completed = (
+                    program == "whoami"
+                )
 
-        if (
-            expected == "found_hidden_files"
-            and success
-            and self._finds_hidden_hint(program, words)
-        ):
-            self._complete(expected)
-            return
+            elif expected == "used_pwd":
+                completed = (
+                    program == "pwd"
+                )
 
-        if (
-            expected == "read_hidden_hint"
-            and success
-            and program in READ_COMMANDS
-            and self._targets_exact_path(words, cwd, HIDDEN_HINT_PATH)
-        ):
-            self._complete(expected)
-            return
+            elif expected == "used_ls":
+                completed = (
+                    program == "ls"
+                )
 
-        if (
-            expected == "found_queue_script"
-            and success
-            and self._finds_queue_script(program, words)
-        ):
-            self._complete(expected)
-            return
+            elif expected == "read_readme":
+                completed = (
+                    program in READ_COMMANDS
+                    and self._targets_path(
+                        words,
+                        cwd,
+                        README_PATH,
+                    )
+                )
 
-        if (
-            expected == "read_queue_script"
-            and success
-            and program in READ_COMMANDS
-            and self._targets_exact_path(words, cwd, PARENT_SCRIPT_PATH)
-        ):
-            self._complete(expected)
-            return
+            elif expected == "found_hidden_files":
+                completed = self._finds_hidden_hint(
+                    program,
+                    words,
+                    command,
+                )
 
-        if (
-            expected == "checked_memory"
-            and success
-            and self._checks_memory(program, words, cwd)
-        ):
-            self._complete(expected)
-            return
+            elif expected == "read_hidden_hint":
+                completed = (
+                    program in READ_COMMANDS
+                    and self._targets_path(
+                        words,
+                        cwd,
+                        HIDDEN_HINT_PATH,
+                    )
+                )
 
-        if (
-            expected == "checked_logs"
-            and success
-            and program in READ_COMMANDS
-            and self._targets_exact_path(words, cwd, SYSTEM_LOG_PATH)
-        ):
-            self._complete(expected)
-            return
+            elif expected == "found_queue_script":
+                completed = (
+                    self._finds_queue_script(
+                        program,
+                        words,
+                        command,
+                    )
+                )
 
-        if expected == "used_ps" and success and program in PROCESS_COMMANDS:
-            if event_workers:
-                self._last_worker_observation = event_workers
+            elif expected == "read_queue_script":
+                completed = (
+                    program in READ_COMMANDS
+                    and self._targets_path(
+                        words,
+                        cwd,
+                        PARENT_SCRIPT_PATH,
+                    )
+                )
 
-            if event_parents:
-                self._last_parent_observation = event_parents
+            elif expected == "checked_memory":
+                completed = (
+                    self._checks_memory(
+                        program,
+                        words,
+                        cwd,
+                    )
+                )
 
-            self._complete(expected)
-            return
+            elif expected == "checked_logs":
+                completed = (
+                    program in READ_COMMANDS
+                    and self._targets_path(
+                        words,
+                        cwd,
+                        SYSTEM_LOG_PATH,
+                    )
+                )
 
-        if expected == "children_stopped":
-            if not self._targets_workers(program, words):
-                return
+            elif expected == "used_ps":
+                completed = (
+                    program in PROCESS_COMMANDS
+                )
 
-            target_pids = set(self._last_worker_observation)
+                if completed:
 
-            if not target_pids:
-                target_pids = event_workers
+                    self._worker_snapshot_pids = set(
+                        self._current_worker_pids,
+                    )
 
-            if not target_pids:
-                return
+                    self._worker_snapshot_parent_pids = set(
+                        self._current_parent_pids,
+                    )
 
-            self._pending_worker_pids = target_pids
-            self._evaluate_pending()
-            return
+            elif expected == "children_stopped":
+                if (
+                    program in KILL_COMMANDS
+                    and self._targets_workers(
+                        program,
+                        words,
+                    )
+                ):
+                    self._worker_kill_attempted = True
 
-        if expected == "found_parent" and success and program in PROCESS_COMMANDS:
-            if not event_parents:
-                return
+                completed = (
+                    self._worker_generation_was_stopped()
+                )
 
-            self._last_parent_observation = event_parents
-            self._complete(expected)
-            return
+            elif expected == "found_parent":
+                completed = (
+                    program in PROCESS_COMMANDS
+                    and bool(
+                        self._current_parent_pids
+                    )
+                )
 
-        if expected == "parent_stopped":
-            if not self._targets_parent(program, words):
-                return
+                if completed:
+                    self._parent_snapshot_pids = set(
+                        self._current_parent_pids,
+                    )
 
-            target_pids = set(self._last_parent_observation)
+            elif expected == "parent_stopped":
+                if (
+                    program in KILL_COMMANDS
+                    and self._targets_parent(
+                        program,
+                        words,
+                    )
+                ):
+                    self._parent_kill_attempted = True
 
-            if not target_pids:
-                target_pids = event_parents
+                completed = (
+                    self._parent_was_stopped()
+                )
 
-            if not target_pids:
-                return
+            if not completed:
+                break
 
-            self._pending_parent_pids = target_pids
-            self._evaluate_pending()
+            self._advance(expected)
 
-    def _evaluate_pending(self) -> None:
-        if self.progress_step >= len(ORDER):
-            return
 
-        expected = ORDER[self.progress_step]
+            if expected != "children_stopped":
+                break
 
-        if expected == "children_stopped" and self._pending_worker_pids:
-            remaining = {
-                pid
-                for pid in self._pending_worker_pids
-                if self._pid_exists(pid)
-            }
+    def _advance(
+        self,
+        step: str,
+    ) -> None:
+        self.progress_step = STEP[step]
 
-            if not remaining:
-                self._pending_worker_pids = None
-                self._complete(expected)
-
-        if expected == "parent_stopped" and self._pending_parent_pids:
-            remaining = {
-                pid
-                for pid in self._pending_parent_pids
-                if self._pid_exists(pid)
-            }
-
-            if not remaining and not self._find_live_parent_pids():
-                self._pending_parent_pids = None
-                self._complete(expected)
-
-    def _complete(self, step: str) -> None:
-        if self.progress_step >= len(ORDER):
-            return
-
-        if ORDER[self.progress_step] != step:
-            return
-
-        self.progress_step += 1
         print(
             f"LinuxScape-Fortschritt: {step}",
             flush=True,
         )
 
-    def _pid_exists(self, pid: int) -> bool:
-        return Path(f"/proc/{pid}").exists()
+    def _try_complete_worker_stop(
+        self,
+    ) -> None:
+        if (
+            self.progress_step + 1
+            != STEP["children_stopped"]
+        ):
+            return
 
-    def _find_live_parent_pids(self) -> set[int]:
-        parent_pids: set[int] = set()
-
-        try:
-            proc_entries = list(Path("/proc").iterdir())
-        except OSError:
-            return parent_pids
-
-        for entry in proc_entries:
-            if not entry.name.isdigit():
-                continue
-
-            if self._read_process_uid(entry) != PLAYER_UID:
-                continue
-
-            try:
-                cmdline = (entry / "cmdline").read_bytes().split(b"\0")
-            except OSError:
-                continue
-
-            arguments = [
-                item.decode("utf-8", errors="replace")
-                for item in cmdline
-                if item
-            ]
-
-            if self._is_parent_command(arguments):
-                parent_pids.add(int(entry.name))
-
-        return parent_pids
-
-    def _read_process_uid(self, process_path: Path) -> int | None:
-        try:
-            status = (process_path / "status").read_text(
-                encoding="utf-8",
-                errors="replace",
+        if self._worker_generation_was_stopped():
+            self._advance(
+                "children_stopped",
             )
-        except OSError:
-            return None
 
-        for line in status.splitlines():
-            if not line.startswith("Uid:"):
-                continue
+    def _try_complete_parent_stop(
+        self,
+    ) -> None:
+        if (
+            self.progress_step + 1
+            != STEP["parent_stopped"]
+        ):
+            return
 
-            fields = line.split()
+        if self._parent_was_stopped():
+            self._advance(
+                "parent_stopped",
+            )
 
-            if len(fields) < 2:
-                return None
-
-            try:
-                return int(fields[1])
-            except ValueError:
-                return None
-
-        return None
-
-    def _is_parent_command(self, arguments: list[str]) -> bool:
-        if not arguments:
+    def _worker_generation_was_stopped(
+        self,
+    ) -> bool:
+        if not self._worker_kill_attempted:
             return False
 
-        if any(
-            argument == RECORDER_PATH
-            for argument in arguments[:3]
+        if not self._worker_snapshot_pids:
+            return False
+
+
+        previous_workers_gone = (
+            self._worker_snapshot_pids.isdisjoint(
+                self._current_worker_pids,
+            )
+        )
+
+
+        if self._worker_snapshot_parent_pids:
+            same_parent_survived = bool(
+                self._worker_snapshot_parent_pids.intersection(
+                    self._current_parent_pids,
+                )
+            )
+        else:
+            same_parent_survived = bool(
+                self._current_parent_pids
+            )
+
+        if not (
+            previous_workers_gone
+            and same_parent_survived
         ):
             return False
 
-        normalized = {
-            posixpath.normpath(argument)
-            for argument in arguments[:5]
-            if argument.startswith("/")
-        }
+        print(
+            "LinuxScape: alte Worker-Generation gestoppt; "
+            f"alt={sorted(self._worker_snapshot_pids)} "
+            f"neu={sorted(self._current_worker_pids)} "
+            f"parent={sorted(self._current_parent_pids)}",
+            flush=True,
+        )
 
-        return PARENT_SCRIPT_PATH in normalized
+        return True
 
-    def _integer_set(self, value: Any) -> set[int]:
+    def _parent_was_stopped(
+        self,
+    ) -> bool:
+        if not self._parent_kill_attempted:
+            return False
+
+        if not self._parent_snapshot_pids:
+            return False
+
+        return self._parent_snapshot_pids.isdisjoint(
+            self._current_parent_pids,
+        )
+
+    def _targets_workers(
+        self,
+        program: str,
+        words: list[str],
+    ) -> bool:
+        arguments = self._non_option_arguments(
+            words,
+        )
+
+        if program == "kill":
+            return any(
+                argument.isdigit()
+                and int(argument)
+                in self._worker_snapshot_pids
+                for argument in arguments
+            )
+
+        return any(
+            self._selector_matches_worker(
+                argument,
+            )
+            for argument in arguments
+        )
+
+    def _targets_parent(
+        self,
+        program: str,
+        words: list[str],
+    ) -> bool:
+        arguments = self._non_option_arguments(
+            words,
+        )
+
+        if program == "kill":
+            return any(
+                argument.isdigit()
+                and int(argument)
+                in self._parent_snapshot_pids
+                for argument in arguments
+            )
+
+        return any(
+            self._selector_matches_parent(
+                argument,
+            )
+            for argument in arguments
+        )
+
+    def _selector_matches_worker(
+        self,
+        selector: str,
+    ) -> bool:
+        selector = selector.strip("'\"")
+
+        if not selector:
+            return False
+
+
+        targets = (
+            "queue_worker_example_00",
+            "queue-worker-example-00",
+            "/usr/local/bin/queue-worker-mem",
+        )
+
+        return any(
+            self._safe_regex_search(
+                selector,
+                target,
+            )
+            for target in targets
+        )
+
+    def _selector_matches_parent(
+        self,
+        selector: str,
+    ) -> bool:
+        selector = selector.strip("'\"")
+
+        if not selector:
+            return False
+
+        targets = (
+            "boogies_setlist_script.py",
+            PARENT_SCRIPT_PATH,
+            f"python3 {PARENT_SCRIPT_PATH}",
+        )
+
+        return any(
+            self._safe_regex_search(
+                selector,
+                target,
+            )
+            for target in targets
+        )
+
+    def _safe_regex_search(
+        self,
+        pattern: str,
+        target: str,
+    ) -> bool:
+        try:
+            return (
+                re.search(
+                    pattern,
+                    target,
+                )
+                is not None
+            )
+        except re.error:
+            return (
+                fnmatch.fnmatch(
+                    target,
+                    pattern,
+                )
+                or pattern in target
+            )
+
+    def _integer_list(
+        self,
+        value: Any,
+    ) -> list[int]:
         if not isinstance(value, list):
-            return set()
+            return []
 
-        return {
+        return [
             item
             for item in value
-            if isinstance(item, int) and item > 0
-        }
+            if isinstance(item, int)
+        ]
 
-    def _split_command(self, command: str) -> list[str]:
+    def _split_command(
+        self,
+        command: str,
+    ) -> list[str]:
         try:
             return shlex.split(command)
         except ValueError:
             return command.split()
 
-    def _program(self, words: list[str]) -> str:
+    def _program(
+        self,
+        words: list[str],
+    ) -> str:
         if not words:
             return ""
 
-        return posixpath.basename(words[0])
+        return posixpath.basename(
+            words[0],
+        )
 
     def _finds_hidden_hint(
         self,
         program: str,
         words: list[str],
+        command: str,
     ) -> bool:
+        if program == "find":
+            return self._any_pattern_matches(
+                words,
+                ".queue_hint",
+            )
+
         if program == "ls":
             return any(
                 argument == "--all"
@@ -493,53 +758,35 @@ class Game:
                 for argument in words[1:]
             )
 
-        if program == "find":
-            return self._find_name_pattern_matches(words, ".queue_hint")
-
         return False
 
     def _finds_queue_script(
         self,
         program: str,
         words: list[str],
+        command: str,
     ) -> bool:
         if program != "find":
             return False
 
-        target_name = posixpath.basename(PARENT_SCRIPT_PATH)
-        return self._find_name_pattern_matches(words, target_name)
+        target_name = posixpath.basename(
+            PARENT_SCRIPT_PATH,
+        )
 
-    def _find_name_pattern_matches(
-        self,
-        words: list[str],
-        target_name: str,
-    ) -> bool:
-        for index, argument in enumerate(words[:-1]):
-            if argument not in {"-name", "-iname", "-path", "-ipath"}:
-                continue
+        if self._any_pattern_matches(
+            words,
+            target_name,
+        ):
+            return True
 
-            pattern = words[index + 1].strip("'\"")
-
-            if argument in {"-name", "-iname"}:
-                if fnmatch.fnmatchcase(target_name, pattern):
-                    return True
-
-                if argument == "-iname" and fnmatch.fnmatch(
-                    target_name.lower(),
-                    pattern.lower(),
-                ):
-                    return True
-            else:
-                if fnmatch.fnmatchcase(PARENT_SCRIPT_PATH, pattern):
-                    return True
-
-                if argument == "-ipath" and fnmatch.fnmatch(
-                    PARENT_SCRIPT_PATH.lower(),
-                    pattern.lower(),
-                ):
-                    return True
-
-        return False
+        return (
+            "boogies" in command
+            and "setlist" in command
+            and (
+                ".py" in command
+                or "script" in command
+            )
+        )
 
     def _checks_memory(
         self,
@@ -547,14 +794,23 @@ class Game:
         words: list[str],
         cwd: str,
     ) -> bool:
-        if program in {"free", "vmstat", "top", "htop"}:
+        if program in {
+            "free",
+            "vmstat",
+            "top",
+            "htop",
+        }:
             return True
 
         if program not in READ_COMMANDS:
             return False
 
         return any(
-            self._targets_exact_path(words, cwd, path)
+            self._targets_path(
+                words,
+                cwd,
+                path,
+            )
             for path in (
                 "/proc/meminfo",
                 "/sys/fs/cgroup/memory.current",
@@ -562,213 +818,263 @@ class Game:
             )
         )
 
-    def _targets_workers(
-        self,
-        program: str,
-        words: list[str],
-    ) -> bool:
-        if program not in KILL_COMMANDS:
-            return False
-
-        arguments = self._non_option_arguments(words)
-
-        if program == "kill":
-            return any(
-                argument.isdigit()
-                and int(argument) in self._last_worker_observation
-                for argument in arguments
-            )
-
-        return any(
-            self._matches_worker_kill_pattern(argument)
-            for argument in arguments
-        )
-
-    def _targets_parent(
-        self,
-        program: str,
-        words: list[str],
-    ) -> bool:
-        if program not in KILL_COMMANDS:
-            return False
-
-        arguments = self._non_option_arguments(words)
-
-        if program == "kill":
-            return any(
-                argument.isdigit()
-                and int(argument) in self._last_parent_observation
-                for argument in arguments
-            )
-
-        return any(
-            self._matches_parent_kill_pattern(argument)
-            for argument in arguments
-        )
-
-    def _matches_worker_kill_pattern(self, pattern: str) -> bool:
-        normalized = pattern.lower()
-
-        if "queue" not in normalized or "worker" not in normalized:
-            return False
-
-        return self._matches_identifier_pattern(
-            pattern,
-            (
-                "queue_worker",
-                "queue_worker_1",
-                "queue-worker",
-                "queue-worker-mem",
-            ),
-        )
-
-    def _matches_parent_kill_pattern(self, pattern: str) -> bool:
-        normalized = pattern.lower()
-
-        if "boogie" not in normalized:
-            return False
-
-        if "setlist" not in normalized and "script" not in normalized:
-            return False
-
-        return self._matches_identifier_pattern(
-            pattern,
-            (
-                "boogies_setlist_script",
-                "boogies_setlist_script.py",
-                PARENT_SCRIPT_PATH,
-            ),
-        )
-
-    def _matches_identifier_pattern(
-        self,
-        pattern: str,
-        identifiers: tuple[str, ...],
-    ) -> bool:
-        if pattern in identifiers:
-            return True
-
-        if any(fnmatch.fnmatchcase(identifier, pattern) for identifier in identifiers):
-            return True
-
-        try:
-            expression = re.compile(pattern)
-        except re.error:
-            return False
-
-        return any(
-            expression.fullmatch(identifier) is not None
-            for identifier in identifiers
-        )
-
-    def _targets_exact_path(
+    def _targets_path(
         self,
         words: list[str],
         cwd: str,
         target_path: str,
     ) -> bool:
-        normalized_target = posixpath.normpath(target_path)
+        target_path = posixpath.normpath(
+            target_path,
+        )
+
+        target_name = posixpath.basename(
+            target_path,
+        )
 
         for argument in words[1:]:
-            if not argument or argument.startswith("-"):
+            if (
+                not argument
+                or argument.startswith("-")
+            ):
                 continue
 
             cleaned = argument.strip("'\"")
 
-            if any(character in cleaned for character in "*?["):
-                candidate_pattern = self._resolve_path(cwd, cleaned)
+            candidate = self._resolve_path(
+                cwd,
+                cleaned,
+            )
 
-                if fnmatch.fnmatchcase(normalized_target, candidate_pattern):
-                    return True
+            if candidate == target_path:
+                return True
 
-                continue
 
-            candidate = self._resolve_path(cwd, cleaned)
+            if fnmatch.fnmatch(
+                target_path,
+                candidate,
+            ):
+                return True
 
-            if candidate == normalized_target:
+            if fnmatch.fnmatch(
+                target_name,
+                cleaned,
+            ):
                 return True
 
         return False
 
-    def _resolve_path(self, cwd: str, argument: str) -> str:
+    def _resolve_path(
+        self,
+        cwd: str,
+        argument: str,
+    ) -> str:
         if argument.startswith("/"):
-            return posixpath.normpath(argument)
+            return posixpath.normpath(
+                argument,
+            )
 
-        return posixpath.normpath(posixpath.join(cwd, argument))
+        return posixpath.normpath(
+            posixpath.join(
+                cwd,
+                argument,
+            )
+        )
 
-    def _non_option_arguments(self, words: list[str]) -> list[str]:
+    def _non_option_arguments(
+        self,
+        words: list[str],
+    ) -> list[str]:
         return [
             argument.strip("'\"")
             for argument in words[1:]
-            if argument and not argument.startswith("-")
+            if (
+                argument
+                and not argument.startswith("-")
+            )
         ]
 
-    def _check(self, step: str) -> bool:
-        self._sync_run()
-
-        if self.progress_step >= STEP[step]:
-            return True
-
-        if STEP[step] != self.progress_step + 1:
-            return False
-
-        self._refresh(step)
-        return self.progress_step >= STEP[step]
-
-    def check_identity_confirmed(self) -> bool:
-        return self._check("used_whoami")
-
-    def check_pwd_used(self) -> bool:
-        return self._check("used_pwd")
-
-    def check_ls_used(self) -> bool:
-        return self._check("used_ls")
-
-    def check_readme_read(self) -> bool:
-        return self._check("read_readme")
-
-    def check_hidden_files_found(self) -> bool:
-        return self._check("found_hidden_files")
-
-    def check_hidden_hint_read(self) -> bool:
-        return self._check("read_hidden_hint")
-
-    def check_queue_script_found(self) -> bool:
-        return self._check("found_queue_script")
-
-    def check_queue_script_read(self) -> bool:
-        return self._check("read_queue_script")
-
-    def check_memory_checked(self) -> bool:
-        return self._check("checked_memory")
-
-    def check_logs_checked(self) -> bool:
-        return self._check("checked_logs")
-
-    def check_ps_used(self) -> bool:
-        return self._check("used_ps")
-
-    def check_children_found(self) -> bool:
-        self._refresh("used_ps")
-        return (
-            self.progress_step >= STEP["used_ps"]
-            and bool(self._last_worker_observation)
+    def _any_pattern_matches(
+        self,
+        words: list[str],
+        target: str,
+    ) -> bool:
+        return any(
+            (
+                self._safe_regex_search(
+                    word.strip("'\""),
+                    target,
+                )
+                or fnmatch.fnmatch(
+                    target,
+                    word.strip("'\""),
+                )
+            )
+            for word in words[1:]
+            if (
+                word
+                and not word.startswith("-")
+            )
         )
 
-    def check_children_stopped(self) -> bool:
-        return self._check("children_stopped")
+    def _has_reached(
+        self,
+        step: str,
+    ) -> bool:
+        return (
+            self.progress_step
+            >= STEP[step]
+        )
 
-    def check_parent_found(self) -> bool:
-        return self._check("found_parent")
+    def check_identity_confirmed(
+        self,
+    ) -> bool:
+        self._refresh()
 
-    def check_parent_stopped(self) -> bool:
-        return self._check("parent_stopped")
+        return self._has_reached(
+            "used_whoami",
+        )
 
-    def check_shutdown_initiated(self) -> bool:
+    def check_pwd_used(
+        self,
+    ) -> bool:
+        self._refresh()
+
+        return self._has_reached(
+            "used_pwd",
+        )
+
+    def check_ls_used(
+        self,
+    ) -> bool:
+        self._refresh()
+
+        return self._has_reached(
+            "used_ls",
+        )
+
+    def check_readme_read(
+        self,
+    ) -> bool:
+        self._refresh()
+
+        return self._has_reached(
+            "read_readme",
+        )
+
+    def check_hidden_files_found(
+        self,
+    ) -> bool:
+        self._refresh()
+
+        return self._has_reached(
+            "found_hidden_files",
+        )
+
+    def check_hidden_hint_read(
+        self,
+    ) -> bool:
+        self._refresh()
+
+        return self._has_reached(
+            "read_hidden_hint",
+        )
+
+    def check_queue_script_found(
+        self,
+    ) -> bool:
+        self._refresh()
+
+        return self._has_reached(
+            "found_queue_script",
+        )
+
+    def check_queue_script_read(
+        self,
+    ) -> bool:
+        self._refresh()
+
+        return self._has_reached(
+            "read_queue_script",
+        )
+
+    def check_memory_checked(
+        self,
+    ) -> bool:
+        self._refresh()
+
+        return self._has_reached(
+            "checked_memory",
+        )
+
+    def check_logs_checked(
+        self,
+    ) -> bool:
+        self._refresh()
+
+        return self._has_reached(
+            "checked_logs",
+        )
+
+    def check_ps_used(
+        self,
+    ) -> bool:
+        self._refresh()
+
+        return self._has_reached(
+            "used_ps",
+        )
+
+    def check_children_found(
+        self,
+    ) -> bool:
+        self._refresh()
+
+        return (
+            self._has_reached(
+                "used_ps",
+            )
+            and bool(
+                self._worker_snapshot_pids
+            )
+        )
+
+    def check_children_stopped(
+        self,
+    ) -> bool:
+        self._refresh()
+
+        return self._has_reached(
+            "children_stopped",
+        )
+
+    def check_parent_found(
+        self,
+    ) -> bool:
+        self._refresh()
+
+        return self._has_reached(
+            "found_parent",
+        )
+
+    def check_parent_stopped(
+        self,
+    ) -> bool:
+        self._refresh()
+
+        return self._has_reached(
+            "parent_stopped",
+        )
+
+    def check_shutdown_initiated(
+        self,
+    ) -> bool:
         return self.check_parent_stopped()
 
 
 if __name__ == "__main__":
     import cscape
 
-    cscape.run(Game())
+    cscape.run(
+        Game(),
+    )
